@@ -1,3 +1,4 @@
+#include <Arduino_LSM6DS3.h>
 #include <SPI.h>
 #include <WiFiNINA.h>
 
@@ -15,11 +16,16 @@ char server[] = "maker.ifttt.com";
 // that you want to connect to (port 80 is default for HTTP):
 WiFiClient client;
 
+enum Face { A = 0, B, C, D, E, F, None };
+
 void setup() {
-  // Initialize serial and wait for port to open:
   Serial.begin(9600);
-  while (!Serial) {
-    ; // wait for serial port to connect. Needed for native USB port only
+
+  if (!IMU.begin()) {
+    Serial.println("Failed to initialize IMU!");
+
+    while (1)
+      ;
   }
 
   // attempt to connect to WiFi network:
@@ -37,17 +43,25 @@ void setup() {
   printWifiStatus();
 }
 
+enum Face lastStableFace;
 void loop() {
-  // if there are incoming bytes available
-  // from the server, read them and print them:
-  sendHttpRequest();
+  enum Face currentFace = getNextStableFace();
 
-  // do nothing forevermore:
-  while (true)
-    ;
+  Serial.print("Current face is: ");
+  Serial.println(currentFace);
+
+  if (currentFace == lastStableFace) {
+    return;
+  }
+  lastStableFace = currentFace;
+
+  char body[100];
+  sprintf(body, "{\"face\":\"%d\"}", currentFace);
+
+  sendHttpRequest(body);
 }
 
-int sendHttpRequest() {
+int sendHttpRequest(char body[]) {
   Serial.println("Starting connection to server...");
 
   if (!client.connectSSL(server, 443)) {
@@ -60,10 +74,6 @@ int sendHttpRequest() {
   char firstline[120];
   sprintf(firstline, "POST /trigger/cube_turned/json/with/key/%s HTTP/1.1",
           token);
-
-  char value1[10] = "bar";
-  char body[120];
-  sprintf(body, "{\"foo\":\"%s\"}", value1);
 
   char contentLength[20];
   sprintf(contentLength, "Content-Length: %d", strlen(body));
@@ -80,7 +90,7 @@ int sendHttpRequest() {
   int c;
   while (true) {
     if (!client.available()) {
-      Serial.println("not available");
+      Serial.print('.');
       delay(100);
       continue;
     }
@@ -94,8 +104,60 @@ int sendHttpRequest() {
       break;
     }
   }
+}
 
-  Serial.println("end");
+enum Face getCurrentFace() {
+  while (true) {
+    if (!IMU.accelerationAvailable()) {
+      continue;
+    }
+
+    float x, y, z;
+    IMU.readAcceleration(x, y, z);
+
+    Serial.print("x:");
+    Serial.print(x);
+    Serial.print(",y:");
+    Serial.print(y);
+    Serial.print(",z:");
+    Serial.println(z);
+
+    if (x > .9)
+      return A;
+    if (x < -.9)
+      return B;
+    if (y > .9)
+      return C;
+    if (y < -.9)
+      return D;
+    if (z > .9)
+      return E;
+    if (z < -.9)
+      return F;
+
+    return None;
+  }
+}
+
+enum Face getNextStableFace() {
+  int consecutiveReadsRequired = 5;
+  int readingCountdown = consecutiveReadsRequired;
+  enum Face lastFace = getCurrentFace();
+
+  while (readingCountdown > 0) {
+    delay(100);
+
+    enum Face currentFace = getCurrentFace();
+
+    --readingCountdown;
+
+    if (currentFace != lastFace) {
+      readingCountdown = consecutiveReadsRequired;
+      lastFace = currentFace;
+    }
+  }
+
+  return lastFace;
 }
 
 void printWifiStatus() {
