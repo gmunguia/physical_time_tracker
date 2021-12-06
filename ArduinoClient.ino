@@ -6,10 +6,10 @@
 
 char ssid[] = SECRET_SSID;
 char pass[] = SECRET_PASS;
-char token[] = SECRET_IFTTT;
+char token[] = SECRET_TOKEN;
 
 int status = WL_IDLE_STATUS;
-char server[] = "maker.ifttt.com";
+char server[] = "hook.integromat.com";
 
 // Initialize the Ethernet client library
 // with the IP address and port of the server
@@ -56,7 +56,7 @@ void loop() {
   lastStableFace = currentFace;
 
   char body[100];
-  sprintf(body, "{\"face\":\"%d\"}", currentFace);
+  sprintf(body, "{\"face\":%d}", currentFace);
 
   sendHttpRequest(body);
 }
@@ -72,14 +72,16 @@ int sendHttpRequest(char body[]) {
   Serial.println("Connected");
 
   char firstline[120];
-  sprintf(firstline, "POST /trigger/cube_turned/json/with/key/%s HTTP/1.1",
-          token);
+  sprintf(firstline, "POST /%s HTTP/1.1", token);
 
   char contentLength[20];
   sprintf(contentLength, "Content-Length: %d", strlen(body));
 
+  char host[40];
+  sprintf(host, "Host: %s", server);
+
   client.println(firstline);
-  client.println("Host: maker.ifttt.com");
+  client.println(host);
   client.println("Connection: close");
   client.println("Content-Type: application/json");
 
